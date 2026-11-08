@@ -174,16 +174,19 @@ class SeaMart(tk.Tk):
         self.category_box=ttk.Combobox(tools,textvariable=self.category_var,state="readonly",width=18,values=["Semua Grup"])
         self.category_box.pack(side="left",padx=(8,0),ipady=5)
         self.category_box.bind("<<ComboboxSelected>>",lambda e:self.refresh_catalog())
-        tk.Label(catalog,text="KATALOG PRODUK",font=("Segoe UI",10,"bold"),fg=navy,bg=white).pack(anchor="w",padx=14,pady=(0,6))
-        wrap=tk.Frame(catalog,bg=white); wrap.pack(fill="both",expand=True,padx=12,pady=(0,12))
-        self.catalog_tree=ttk.Treeview(wrap,columns=("name","category","price","stock"),show="headings")
-        for col,title,width in [("name","Nama Produk",230),("category","Grup",110),("price","Harga Jual",105),("stock","Stok",55)]:
-            self.catalog_tree.heading(col,text=title); self.catalog_tree.column(col,width=width,anchor="w")
-        self.catalog_tree.column("price",anchor="e"); self.catalog_tree.column("stock",anchor="center")
-        sb=ttk.Scrollbar(wrap,orient="vertical",command=self.catalog_tree.yview); self.catalog_tree.configure(yscrollcommand=sb.set)
-        self.catalog_tree.pack(side="left",fill="both",expand=True); sb.pack(side="right",fill="y")
-        self.catalog_tree.bind("<Double-1>",lambda e:self.add_selected_product())
-        ttk.Button(catalog,text="＋ Tambahkan Produk Dipilih",command=self.add_selected_product).pack(anchor="e",padx=12,pady=(0,12))
+        cathead=tk.Frame(catalog,bg=white); cathead.pack(fill="x",padx=14,pady=(0,6))
+        tk.Label(cathead,text="KATALOG PRODUK",font=("Segoe UI",10,"bold"),fg=navy,bg=white).pack(side="left")
+        self.catalog_count_var=tk.StringVar(value="0 produk")
+        tk.Label(cathead,textvariable=self.catalog_count_var,font=("Segoe UI",8),fg="#64748b",bg=white).pack(side="right")
+        wrap=tk.Frame(catalog,bg=white); wrap.pack(fill="both",expand=True,padx=10,pady=(0,10))
+        self.catalog_canvas=tk.Canvas(wrap,bg=white,highlightthickness=0)
+        sb=ttk.Scrollbar(wrap,orient="vertical",command=self.catalog_canvas.yview)
+        self.catalog_canvas.configure(yscrollcommand=sb.set)
+        self.catalog_canvas.pack(side="left",fill="both",expand=True); sb.pack(side="right",fill="y")
+        self.catalog_cards=tk.Frame(self.catalog_canvas,bg=white)
+        self.catalog_window=self.catalog_canvas.create_window((0,0),window=self.catalog_cards,anchor="nw")
+        self.catalog_cards.bind("<Configure>",lambda e:self.catalog_canvas.configure(scrollregion=self.catalog_canvas.bbox("all")))
+        self.catalog_canvas.bind("<Configure>",lambda e:self.catalog_canvas.itemconfigure(self.catalog_window,width=e.width))
         tk.Label(order,text="KERANJANG BELANJA",font=("Segoe UI",12,"bold"),fg=navy,bg=white).pack(anchor="w",padx=14,pady=(14,8))
         cwrap=tk.Frame(order,bg=white); cwrap.pack(fill="both",expand=True,padx=12)
         self.carttree=ttk.Treeview(cwrap,columns=("name","qty","price","total"),show="headings",height=12)
@@ -204,16 +207,29 @@ class SeaMart(tk.Tk):
         ttk.Button(pay,text="BAYAR QRIS",command=lambda:self.pay("QRIS")).pack(side="left",fill="x",expand=True,padx=4)
 
     def refresh_catalog(self):
-        if not hasattr(self,"catalog_tree"): return
-        self.catalog_tree.delete(*self.catalog_tree.get_children())
+        if not hasattr(self,"catalog_cards"): return
+        for child in self.catalog_cards.winfo_children(): child.destroy()
         term=self.search.get().strip().lower()
         category=self.category_var.get() if hasattr(self,"category_var") else "Semua Grup"
         with db() as c: rows=c.execute("SELECT id,name,category,price,stock,code,barcode FROM products ORDER BY name").fetchall()
+        visible=[]
         for r in rows:
             if category not in ("","Semua Grup") and (r["category"] or "Umum")!=category: continue
             hay=" ".join(str(r[k] or "") for k in ("name","code","barcode","category")).lower()
             if term and term not in hay: continue
-            self.catalog_tree.insert("","end",iid=str(r["id"]),values=(r["name"],r["category"] or "Umum",money(r["price"]),r["stock"]))
+            visible.append(r)
+        self.catalog_count_var.set(str(len(visible))+" produk")
+        for i,r in enumerate(visible):
+            card=tk.Frame(self.catalog_cards,bg="#ffffff",highlightthickness=1,highlightbackground="#dce5ef")
+            card.grid(row=i//3,column=i%3,sticky="nsew",padx=5,pady=5)
+            self.catalog_cards.grid_columnconfigure(i%3,weight=1,uniform="product")
+            tk.Label(card,text=str(r["name"]),font=("Segoe UI",9,"bold"),fg="#183b5b",bg="#ffffff",wraplength=145,justify="left",height=2).pack(fill="x",padx=9,pady=(8,2))
+            tk.Label(card,text=money(r["price"]),font=("Segoe UI",11,"bold"),fg="#1767a5",bg="#ffffff").pack(anchor="w",padx=9)
+            stock_text="Non stok" if r["non_stock"] else "Stok: "+str(r["stock"])
+            tk.Label(card,text=(r["category"] or "Umum")+"  •  "+stock_text,font=("Segoe UI",8),fg="#64748b",bg="#ffffff").pack(anchor="w",padx=9,pady=(2,6))
+            ttk.Button(card,text="＋ Tambah",command=lambda pid=r["id"]:self.add_product_to_cart(pid)).pack(fill="x",padx=7,pady=(0,7))
+        if not visible:
+            tk.Label(self.catalog_cards,text="Produk tidak ditemukan",font=("Segoe UI",10),fg="#64748b",bg="#ffffff").grid(row=0,column=0,padx=20,pady=30)
 
     def refresh_category_choices(self):
         if not hasattr(self,"category_box"): return
