@@ -3,8 +3,14 @@ import tkinter as tk
 from datetime import datetime, date
 from tkinter import ttk, messagebox, filedialog, simpledialog
 import sqlite3
+import sys
 
 def install(SeaMart):
+    # Resolve shared helpers from the main application module. Without this,
+    # callbacks in this extension would raise NameError when opening the tab.
+    app_module = sys.modules[SeaMart.__module__]
+    globals()['db'] = app_module.db
+    globals()['money'] = app_module.money
     original_init = SeaMart.__init__
     def extended_init(self):
         original_init(self)
