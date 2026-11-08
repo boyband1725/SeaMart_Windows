@@ -395,11 +395,18 @@ class SeaMart(tk.Tk):
     def import_csv(self):
         path=filedialog.askopenfilename(filetypes=[("CSV","*.csv")])
         if not path:return
-        count=0
+        if not messagebox.askyesno("Timpa data barang",
+            "SEMUA master barang lama akan diganti dengan isi CSV.\n\nKode Produk dan Barcode yang terisi akan dipertahankan persis seperti file.\nBaris dengan Kode Produk kosong/duplikat atau Barcode duplikat akan dilewati.\nBarcode kosong tetap kosong.\n\nLanjutkan?"):
+            return
         try:
+            parsed=[]
+            seen_codes=set()
+            seen_barcodes=set()
+            skipped=0
             with open(path,encoding="utf-8-sig",newline="") as f:
                 sample=f.read(4096);f.seek(0)
-                dialect=csv.Sniffer().sniff(sample,delimiters=",;\t")
+                try:dialect=csv.Sniffer().sniff(sample,delimiters=",;\\t")
+                except csv.Error:dialect=csv.excel
                 reader=csv.DictReader(f,dialect=dialect)
                 for row in reader:
                     r={str(k).strip().lower():str(v or "").strip() for k,v in row.items() if k}
@@ -408,30 +415,42 @@ class SeaMart(tk.Tk):
                             if k.lower() in r and r[k.lower()]!="":return r[k.lower()]
                         return default
                     name=pick("produk","nama","name")
-                    if not name:continue
-                    code=pick("kode produk","kode_produk","code",default="CSV-"+str(count+1))
-                    barcode=pick("barcode") or None
-                    cat=pick("grup produk","kategori","category",default="Umum")
-                    unit=pick("satuan","unit",default="pcs")
+                    code=pick("kode produk","kode_produk","code")
+                    barcode=pick("barcode")
+                    if not name or not code or code in seen_codes or (barcode and barcode in seen_barcodes):
+                        skipped+=1
+                        continue
                     def num(v):
                         v=v.replace("Rp","").replace(" ","")
                         if "," in v and "." in v:v=v.replace(".","").replace(",",".")
                         elif "," in v:v=v.replace(",",".")
                         return float(v or 0)
-                    cost=num(pick("harga pokok","harga_modal","cost",default="0"))
-                    price=num(pick("harga jual","harga_jual","price",default="0"))
-                    stock=num(pick("stok","stock",default="0"))
-                    minimum=num(pick("stok minimum","stok_minimum","min_stock",default="0"))
+                    try:
+                        cost=num(pick("harga pokok","harga_modal","cost",default="0"))
+                        price=num(pick("harga jual","harga_jual","price",default="0"))
+                        stock=num(pick("stok","stock",default="0"))
+                        minimum=num(pick("stok minimum","stok_minimum","min_stock",default="0"))
+                    except ValueError:
+                        skipped+=1
+                        continue
+                    cat=pick("grup produk","kategori","category",default="Umum")
+                    unit=pick("satuan","unit",default="pcs")
                     nonstock=1 if pick("non stok","non_stok","nonstock",default="0").lower() in ("1","ya","yes","true") else 0
-                    with db() as c:
-                        c.execute("""INSERT INTO products(code,barcode,name,category,unit,cost,price,stock,min_stock,non_stock)
-                        VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(code) DO UPDATE SET barcode=excluded.barcode,name=excluded.name,
-                        category=excluded.category,unit=excluded.unit,cost=excluded.cost,price=excluded.price,
-                        stock=excluded.stock,min_stock=excluded.min_stock,non_stock=excluded.non_stock""",
-                        (code,barcode,name,cat,unit,cost,price,stock,minimum,nonstock))
-                    count+=1
-            self.refresh_all();messagebox.showinfo("Impor CSV",str(count)+" barang diproses.")
-        except Exception as e:messagebox.showerror("Impor gagal",str(e))
+                    parsed.append((code,barcode or None,name,cat,unit,cost,price,stock,minimum,nonstock))
+                    seen_codes.add(code)
+                    if barcode:seen_barcodes.add(barcode)
+            if not parsed:
+                messagebox.showerror("Impor CSV","Tidak ada barang valid. Data lama tidak diubah.")
+                return
+            with db() as c:
+                c.execute("DELETE FROM products")
+                c.executemany("""INSERT INTO products(code,barcode,name,category,unit,cost,price,stock,min_stock,non_stock)
+                    VALUES(?,?,?,?,?,?,?,?,?,?)""",parsed)
+            self.refresh_all()
+            messagebox.showinfo("Impor CSV",
+                f"Berhasil mengganti master barang.\\nMasuk: {len(parsed)} barang\\nDilewati: {skipped} baris\\nKode Produk dan Barcode tidak diubah.")
+        except Exception as e:
+            messagebox.showerror("Impor gagal",str(e))
 
     def export_products(self):
         path=filedialog.asksaveasfilename(defaultextension=".csv",filetypes=[("CSV","*.csv")])
