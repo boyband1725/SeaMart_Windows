@@ -369,6 +369,9 @@ class SeaMart(tk.Tk):
         box.insert("1.0","\n".join(lines));box.configure(state="disabled")
         ttk.Button(win,text="Tutup",command=win.destroy).pack(pady=6)
 
+from seamart_extra import install as install_extra
+install_extra(SeaMart)
+
 if __name__=="__main__":
     init_db()
     SeaMart().mainloop()
