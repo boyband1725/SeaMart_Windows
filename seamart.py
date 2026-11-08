@@ -127,7 +127,9 @@ class SeaMart(tk.Tk):
         self.style=ttk.Style(self)
         self.style.theme_use("clam")
         self.style.configure("Treeview", rowheight=29, font=("Segoe UI",10))
-        self.style.configure("Treeview.Heading", font=("Segoe UI",10,"bold"))
+        self.style.configure("Treeview.Heading", font=("Segoe UI",10,"bold"), background="#e5edf6", foreground="#123c69")
+        self.style.configure("TButton", font=("Segoe UI",9,"bold"), padding=(10,7))
+        self.style.configure("TCombobox", padding=5)
         top=tk.Frame(self,bg="#123c69",height=68); top.pack(fill="x")
         tk.Label(top,text="SeaMart",font=("Segoe UI",22,"bold"),fg="white",bg="#123c69").pack(side="left",padx=22,pady=12)
         tk.Label(top,text="POINT OF SALE  •  OFFLINE",font=("Segoe UI",10),fg="#dce9f6",bg="#123c69").pack(side="left",padx=8,pady=20)
@@ -140,6 +142,7 @@ class SeaMart(tk.Tk):
         for frame,label in [(self.cash,"Kasir"),(self.mastertab,"Master Barang"),(self.stocktab,"Stok & Mutasi"),(self.report,"Laporan"),(self.cashbooktab,"Kas Masuk/Keluar")]:
             self.tabs.add(frame,text=label)
         self.build_cash(); self.build_master(); self.build_stock(); self.build_reports(); self.build_cashbook()
+        self.search.trace_add("write", lambda *_: self.refresh_catalog())
         self.refresh_all()
 
     def tree(self,parent,cols,heads,width=130):
@@ -152,18 +155,96 @@ class SeaMart(tk.Tk):
         return t
 
     def build_cash(self):
-        bar=tk.Frame(self.cash,bg="#eef3f8"); bar.pack(fill="x",padx=10,pady=12)
+        bg="#f3f6fb"; white="#ffffff"; navy="#123c69"; blue="#1d5d91"
+        self.cash.configure(bg=bg)
+        header=tk.Frame(self.cash,bg=white,height=58); header.pack(fill="x",padx=12,pady=(12,8))
+        tk.Label(header,text="$",font=("Segoe UI",24,"bold"),fg=blue,bg=white).pack(side="left",padx=(14,8),pady=6)
+        tk.Label(header,text="KASIR",font=("Segoe UI",15,"bold"),fg=navy,bg=white).pack(side="left",pady=8)
+        tk.Label(header,text="Pilih produk atau scan barcode untuk memulai transaksi",font=("Segoe UI",9),fg="#64748b",bg=white).pack(side="left",padx=18)
+        body=tk.Frame(self.cash,bg=bg); body.pack(fill="both",expand=True,padx=12,pady=4)
+        catalog=tk.Frame(body,bg=white,highlightthickness=1,highlightbackground="#dce4ee")
+        catalog.pack(side="left",fill="both",expand=True,padx=(0,8))
+        order=tk.Frame(body,bg=white,width=420,highlightthickness=1,highlightbackground="#dce4ee")
+        order.pack(side="right",fill="both",padx=(8,0)); order.pack_propagate(False)
+        tools=tk.Frame(catalog,bg=white); tools.pack(fill="x",padx=12,pady=12)
         self.search=tk.StringVar()
-        ttk.Entry(bar,textvariable=self.search,width=42).pack(side="left",ipady=5)
-        ttk.Button(bar,text="Tambah Barang",command=self.add_cart).pack(side="left",padx=7)
-        ttk.Button(bar,text="Cari Kategori",command=self.pick_category).pack(side="left")
-        self.carttree=self.tree(self.cash,("name","qty","price","total"),("Nama Barang","Qty","Harga","Jumlah"))
-        foot=tk.Frame(self.cash,bg="#eef3f8"); foot.pack(fill="x",padx=12,pady=10)
-        self.totalvar=tk.StringVar(value="TOTAL  Rp0")
-        tk.Label(foot,textvariable=self.totalvar,bg="#eef3f8",fg="#123c69",font=("Segoe UI",20,"bold")).pack(side="left")
-        ttk.Button(foot,text="Hapus Keranjang",command=self.clear_cart).pack(side="right",padx=4)
-        ttk.Button(foot,text="Bayar QRIS",command=lambda:self.pay("QRIS")).pack(side="right",padx=4)
-        ttk.Button(foot,text="Bayar Tunai",command=lambda:self.pay("Tunai")).pack(side="right",padx=4)
+        ent=ttk.Entry(tools,textvariable=self.search,font=("Segoe UI",11)); ent.pack(side="left",fill="x",expand=True,ipady=7)
+        ent.bind("<Return>",lambda e:self.add_cart())
+        self.category_var=tk.StringVar(value="Semua Grup")
+        self.category_box=ttk.Combobox(tools,textvariable=self.category_var,state="readonly",width=18,values=["Semua Grup"])
+        self.category_box.pack(side="left",padx=(8,0),ipady=5)
+        self.category_box.bind("<<ComboboxSelected>>",lambda e:self.refresh_catalog())
+        tk.Label(catalog,text="KATALOG PRODUK",font=("Segoe UI",10,"bold"),fg=navy,bg=white).pack(anchor="w",padx=14,pady=(0,6))
+        wrap=tk.Frame(catalog,bg=white); wrap.pack(fill="both",expand=True,padx=12,pady=(0,12))
+        self.catalog_tree=ttk.Treeview(wrap,columns=("name","category","price","stock"),show="headings")
+        for col,title,width in [("name","Nama Produk",230),("category","Grup",110),("price","Harga Jual",105),("stock","Stok",55)]:
+            self.catalog_tree.heading(col,text=title); self.catalog_tree.column(col,width=width,anchor="w")
+        self.catalog_tree.column("price",anchor="e"); self.catalog_tree.column("stock",anchor="center")
+        sb=ttk.Scrollbar(wrap,orient="vertical",command=self.catalog_tree.yview); self.catalog_tree.configure(yscrollcommand=sb.set)
+        self.catalog_tree.pack(side="left",fill="both",expand=True); sb.pack(side="right",fill="y")
+        self.catalog_tree.bind("<Double-1>",lambda e:self.add_selected_product())
+        ttk.Button(catalog,text="＋ Tambahkan Produk Dipilih",command=self.add_selected_product).pack(anchor="e",padx=12,pady=(0,12))
+        tk.Label(order,text="KERANJANG BELANJA",font=("Segoe UI",12,"bold"),fg=navy,bg=white).pack(anchor="w",padx=14,pady=(14,8))
+        cwrap=tk.Frame(order,bg=white); cwrap.pack(fill="both",expand=True,padx=12)
+        self.carttree=ttk.Treeview(cwrap,columns=("name","qty","price","total"),show="headings",height=12)
+        for col,title,width in [("name","Produk",150),("qty","Qty",42),("price","Harga",85),("total","Jumlah",95)]:
+            self.carttree.heading(col,text=title); self.carttree.column(col,width=width,anchor="w")
+        self.carttree.column("qty",anchor="center")
+        cs=ttk.Scrollbar(cwrap,orient="vertical",command=self.carttree.yview); self.carttree.configure(yscrollcommand=cs.set)
+        self.carttree.pack(side="left",fill="both",expand=True); cs.pack(side="right",fill="y")
+        controls=tk.Frame(order,bg=white); controls.pack(fill="x",padx=12,pady=8)
+        ttk.Button(controls,text="Hapus Item",command=self.remove_cart_item).pack(side="left")
+        ttk.Button(controls,text="Kosongkan",command=self.clear_cart).pack(side="right")
+        summary=tk.Frame(order,bg="#edf4fb"); summary.pack(fill="x",padx=12,pady=(0,12))
+        self.totalvar=tk.StringVar(value="Rp0")
+        tk.Label(summary,text="TOTAL PEMBAYARAN",font=("Segoe UI",9,"bold"),fg="#52657a",bg="#edf4fb").pack(anchor="w",padx=12,pady=(10,0))
+        tk.Label(summary,textvariable=self.totalvar,font=("Segoe UI",22,"bold"),fg=navy,bg="#edf4fb").pack(anchor="w",padx=12,pady=(0,10))
+        pay=tk.Frame(summary,bg="#edf4fb"); pay.pack(fill="x",padx=8,pady=(0,10))
+        ttk.Button(pay,text="BAYAR TUNAI",command=lambda:self.pay("Tunai")).pack(side="left",fill="x",expand=True,padx=4)
+        ttk.Button(pay,text="BAYAR QRIS",command=lambda:self.pay("QRIS")).pack(side="left",fill="x",expand=True,padx=4)
+
+    def refresh_catalog(self):
+        if not hasattr(self,"catalog_tree"): return
+        self.catalog_tree.delete(*self.catalog_tree.get_children())
+        term=self.search.get().strip().lower()
+        category=self.category_var.get() if hasattr(self,"category_var") else "Semua Grup"
+        with db() as c: rows=c.execute("SELECT id,name,category,price,stock,code,barcode FROM products ORDER BY name").fetchall()
+        for r in rows:
+            if category not in ("","Semua Grup") and (r["category"] or "Umum")!=category: continue
+            hay=" ".join(str(r[k] or "") for k in ("name","code","barcode","category")).lower()
+            if term and term not in hay: continue
+            self.catalog_tree.insert("","end",iid=str(r["id"]),values=(r["name"],r["category"] or "Umum",money(r["price"]),r["stock"]))
+
+    def refresh_category_choices(self):
+        if not hasattr(self,"category_box"): return
+        with db() as c: cats=[r[0] for r in c.execute("SELECT DISTINCT COALESCE(NULLIF(category,''),'Umum') FROM products ORDER BY 1")]
+        self.category_box["values"]=["Semua Grup"]+cats
+        if self.category_var.get() not in self.category_box["values"]: self.category_var.set("Semua Grup")
+
+    def add_selected_product(self):
+        selected=self.catalog_tree.selection()
+        if not selected:
+            messagebox.showinfo("SeaMart","Pilih produk pada katalog terlebih dahulu."); return
+        self.add_product_to_cart(int(selected[0]))
+
+    def add_product_to_cart(self,product_id):
+        with db() as c: r=c.execute("SELECT * FROM products WHERE id=?",(product_id,)).fetchone()
+        if not r: messagebox.showwarning("SeaMart","Produk tidak ditemukan."); return
+        if not r["non_stock"] and r["stock"]<=0: messagebox.showwarning("Stok","Stok barang kosong."); return
+        for item in self.cart:
+            if item["id"]==r["id"]:
+                if not item["non_stock"] and item["qty"]>=r["stock"]:
+                    messagebox.showwarning("Stok","Jumlah melebihi stok tersedia."); return
+                item["qty"]+=1; break
+        else: self.cart.append(dict(id=r["id"],name=r["name"],qty=1,price=r["price"],cost=r["cost"],stock=r["stock"],non_stock=r["non_stock"]))
+        self.draw_cart()
+
+    def remove_cart_item(self):
+        selected=self.carttree.selection()
+        if not selected:
+            messagebox.showinfo("SeaMart","Pilih item keranjang yang akan dihapus."); return
+        idx=self.carttree.index(selected[0])
+        if 0<=idx<len(self.cart): self.cart.pop(idx); self.draw_cart()
 
     def build_master(self):
         bar=tk.Frame(self.mastertab,bg="#eef3f8"); bar.pack(fill="x",padx=10,pady=10)
@@ -195,6 +276,7 @@ class SeaMart(tk.Tk):
 
     def refresh_all(self):
         self.refresh_products(); self.refresh_stock(); self.refresh_reports(); self.refresh_cashbook()
+        self.refresh_category_choices(); self.refresh_catalog()
 
     def refresh_products(self):
         self.ptree.delete(*self.ptree.get_children())
@@ -223,27 +305,24 @@ class SeaMart(tk.Tk):
     def add_cart(self):
         q=self.search.get().strip()
         if not q:return
-        with db() as c:r=c.execute("SELECT * FROM products WHERE code=? OR barcode=? OR name LIKE ? LIMIT 1",(q,q,"%"+q+"%")).fetchone()
-        if not r:messagebox.showwarning("SeaMart","Barang tidak ditemukan");return
-        if not r["non_stock"] and r["stock"]<=0:messagebox.showwarning("Stok","Stok barang kosong");return
-        for x in self.cart:
-            if x["id"]==r["id"]:x["qty"]+=1;break
-        else:self.cart.append(dict(id=r["id"],name=r["name"],qty=1,price=r["price"],cost=r["cost"],stock=r["stock"],non_stock=r["non_stock"]))
-        self.search.set("");self.draw_cart()
+        with db() as c: r=c.execute("SELECT * FROM products WHERE code=? OR barcode=? OR name LIKE ? LIMIT 1",(q,q,"%"+q+"%")).fetchone()
+        if not r:
+            messagebox.showwarning("SeaMart","Barang tidak ditemukan"); return
+        self.add_product_to_cart(r["id"])
+        self.search.set("")
+        self.refresh_catalog()
+
 
     def pick_category(self):
-        with db() as c:cats=[r[0] for r in c.execute("SELECT DISTINCT category FROM products ORDER BY category")]
-        if not cats: return
-        win=tk.Toplevel(self);win.title("Pilih Grup Produk");win.geometry("320x400")
-        for cat in cats:
-            ttk.Button(win,text=cat,command=lambda x=cat:(self.search.set(x),win.destroy(),self.search.focus_set())).pack(fill="x",padx=12,pady=5)
+        self.category_box.focus_set()
+
 
     def draw_cart(self):
         self.carttree.delete(*self.carttree.get_children());total=0
-        for x in self.cart:
+        for i,x in enumerate(self.cart):
             line=x["qty"]*x["price"];total+=line
-            self.carttree.insert("","end",values=(x["name"],x["qty"],money(x["price"]),money(line)))
-        self.total=total;self.totalvar.set("TOTAL  "+money(total))
+            self.carttree.insert("","end",iid=str(i),values=(x["name"],x["qty"],money(x["price"]),money(line)))
+        self.total=total;self.totalvar.set(money(total))
 
     def clear_cart(self):
         self.cart=[];self.draw_cart()
