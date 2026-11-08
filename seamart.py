@@ -43,7 +43,36 @@ def init_db():
         CREATE TABLE IF NOT EXISTS cashbook(
           id INTEGER PRIMARY KEY, created TEXT, kind TEXT, description TEXT, amount REAL);
         """)
-        # Migrate databases created by older SeaMart builds without deleting user data.
+        # Migrate older database layouts in place; retain existing rows.
+        def ensure_columns(table, definitions):
+            existing = {row[1] for row in c.execute("PRAGMA table_info(" + table + ")")}
+            for column, definition in definitions.items():
+                if column not in existing:
+                    c.execute("ALTER TABLE " + table + " ADD COLUMN " + column + " " + definition)
+
+        ensure_columns("sales", {
+            "invoice": "TEXT", "created": "TEXT DEFAULT ''",
+            "payment": "TEXT DEFAULT 'Tunai'", "subtotal": "REAL DEFAULT 0",
+            "discount": "REAL DEFAULT 0", "total": "REAL DEFAULT 0",
+            "received": "REAL DEFAULT 0", "change_due": "REAL DEFAULT 0",
+            "status": "TEXT DEFAULT 'LUNAS'"
+        })
+        ensure_columns("sale_items", {
+            "sale_id": "INTEGER", "product_id": "INTEGER", "name": "TEXT DEFAULT ''",
+            "qty": "REAL DEFAULT 0", "price": "REAL DEFAULT 0",
+            "cost": "REAL DEFAULT 0", "line_total": "REAL DEFAULT 0"
+        })
+        ensure_columns("movements", {
+            "created": "TEXT DEFAULT ''", "product_id": "INTEGER",
+            "kind": "TEXT DEFAULT 'PENYESUAIAN'", "qty": "REAL DEFAULT 0",
+            "note": "TEXT DEFAULT ''"
+        })
+        ensure_columns("cashbook", {
+            "created": "TEXT DEFAULT ''", "kind": "TEXT DEFAULT 'MASUK'",
+            "description": "TEXT DEFAULT ''", "amount": "REAL DEFAULT 0"
+        })
+
+        # Migrate product columns without deleting existing user data.
         product_columns = {row[1] for row in c.execute("PRAGMA table_info(products)")}
         migrations = {
             "code": "TEXT",
