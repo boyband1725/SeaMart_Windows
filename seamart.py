@@ -43,6 +43,45 @@ def init_db():
         CREATE TABLE IF NOT EXISTS cashbook(
           id INTEGER PRIMARY KEY, created TEXT, kind TEXT, description TEXT, amount REAL);
         """)
+        # Migrate databases created by older SeaMart builds without deleting user data.
+        product_columns = {row[1] for row in c.execute("PRAGMA table_info(products)")}
+        migrations = {
+            "code": "TEXT",
+            "barcode": "TEXT",
+            "name": "TEXT NOT NULL DEFAULT ''",
+            "category": "TEXT DEFAULT 'Umum'",
+            "unit": "TEXT DEFAULT 'pcs'",
+            "cost": "REAL DEFAULT 0",
+            "price": "REAL DEFAULT 0",
+            "stock": "REAL DEFAULT 0",
+            "min_stock": "REAL DEFAULT 0",
+            "non_stock": "INTEGER DEFAULT 0",
+        }
+        for column, definition in migrations.items():
+            if column not in product_columns:
+                c.execute("ALTER TABLE products ADD COLUMN " + column + " " + definition)
+        product_columns = {row[1] for row in c.execute("PRAGMA table_info(products)")}
+        # Copy common legacy Indonesian column names when present.
+        aliases = {
+            "name": ("nama", "produk"),
+            "code": ("kode_produk", "kode"),
+            "cost": ("harga_modal", "harga_pokok"),
+            "price": ("harga_jual",),
+            "stock": ("stok",),
+            "category": ("kategori", "grup_produk"),
+            "unit": ("satuan",),
+        }
+        for target, candidates in aliases.items():
+            source = next((name for name in candidates if name in product_columns), None)
+            if source:
+                c.execute(
+                    'UPDATE products SET "' + target + '" = "' + source + '" '
+                    'WHERE "' + target + '" IS NULL OR "' + target + '" = ""'
+                )
+        c.execute("UPDATE products SET code = 'OLD-' || id WHERE code IS NULL OR code = ''")
+        c.execute("UPDATE products SET name = 'Barang ' || id WHERE name IS NULL OR name = ''")
+        c.execute("UPDATE products SET category = 'Umum' WHERE category IS NULL OR category = ''")
+        c.execute("UPDATE products SET unit = 'pcs' WHERE unit IS NULL OR unit = ''")
         c.execute("INSERT OR IGNORE INTO products(code,name,category,price,stock) VALUES('DEMO-001','Contoh Barang','Umum',10000,10)")
 
 def money(v):
