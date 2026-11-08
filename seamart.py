@@ -549,7 +549,47 @@ class SeaMart(tk.Tk):
             lines.extend([x["name"][:32],f'{x["qty"]:g} x {money(x["price"])} = {money(x["qty"]*x["price"])}'])
         lines.extend(["-"*32,"Subtotal : "+money(subtotal),"Diskon   : "+money(discount),"TOTAL    : "+money(total),"Diterima : "+money(received),"Kembali  : "+money(change),"","       Terima kasih"])
         box.insert("1.0","\n".join(lines));box.configure(state="disabled")
-        ttk.Button(win,text="Tutup",command=win.destroy).pack(pady=6)
+        actions=tk.Frame(win);actions.pack(fill="x",padx=8,pady=6)
+        ttk.Button(actions,text="CETAK STRUK",command=self.print_receipt).pack(side="left",expand=True,fill="x",padx=4)
+        ttk.Button(actions,text="Tutup",command=win.destroy).pack(side="left",expand=True,fill="x",padx=4)
+
+    def print_receipt(self):
+        if not getattr(self,"last_receipt",None):
+            messagebox.showinfo("Struk","Belum ada transaksi pada sesi ini.");return
+        try:
+            import win32print
+            printers=[p[2] for p in win32print.EnumPrinters(win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS)]
+            if not printers:
+                messagebox.showwarning("Printer","Belum ada printer terpasang di Windows. Hubungkan printer dan instal drivernya dahulu.");return
+            dlg=tk.Toplevel(self);dlg.title("Pilih Printer Struk");dlg.geometry("390x155")
+            tk.Label(dlg,text="Pilih printer thermal 58mm:",font=("Segoe UI",10,"bold")).pack(anchor="w",padx=14,pady=(14,6))
+            default=win32print.GetDefaultPrinter()
+            choice=tk.StringVar(value=default if default in printers else printers[0])
+            ttk.Combobox(dlg,textvariable=choice,values=printers,state="readonly").pack(fill="x",padx=14)
+            def send():
+                printer=choice.get()
+                inv,created,method,subtotal,discount,total,received,change,items=self.last_receipt
+                lines=["\\x1b@","\\x1ba\\x01","SEAMART","STRUK PEMBELIAN","\\x1ba\\x00","-"*32,inv,created,"Metode: "+method,"-"*32]
+                for item in items:
+                    lines.extend([str(item["name"])[:32],f'{item["qty"]:g} x {money(item["price"])} = {money(item["qty"]*item["price"])}'])
+                lines.extend(["-"*32,"Subtotal : "+money(subtotal),"Diskon   : "+money(discount),"TOTAL    : "+money(total),"Diterima : "+money(received),"Kembali  : "+money(change),"","Terima kasih","","\\x1dV\\x00"])
+                payload=("\\n".join(lines)+"\\n").encode("cp437","replace")
+                try:
+                    h=win32print.OpenPrinter(printer)
+                    try:
+                        win32print.StartDocPrinter(h,1,("SeaMart "+inv,None,"RAW"))
+                        try:
+                            win32print.StartPagePrinter(h);win32print.WritePrinter(h,payload);win32print.EndPagePrinter(h)
+                        finally:win32print.EndDocPrinter(h)
+                    finally:win32print.ClosePrinter(h)
+                    dlg.destroy()
+                    messagebox.showinfo("Cetak Struk","Struk dikirim ke "+printer+". Periksa hasil cetak pada kertas 58mm.")
+                except Exception as e:messagebox.showerror("Cetak gagal",str(e))
+            ttk.Button(dlg,text="KIRIM CETAK",command=send).pack(pady=12)
+        except ImportError:
+            messagebox.showerror("Printer","Dukungan printer Windows belum tersedia. Gunakan installer SeaMart terbaru.")
+        except Exception as e:messagebox.showerror("Printer",str(e))
+
 
 from seamart_extra import install as install_extra
 install_extra(SeaMart)
