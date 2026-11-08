@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'seamart.py'
+      - 'seamart_extra.py'
       - 'requirements.txt'
       - 'SeaMartPOSV15.iss'
       - '.github/workflows/build-windows.yml'
