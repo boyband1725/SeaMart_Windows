@@ -211,7 +211,7 @@ class SeaMart(tk.Tk):
         for child in self.catalog_cards.winfo_children(): child.destroy()
         term=self.search.get().strip().lower()
         category=self.category_var.get() if hasattr(self,"category_var") else "Semua Grup"
-        with db() as c: rows=c.execute("SELECT id,name,category,price,stock,code,barcode FROM products ORDER BY name").fetchall()
+        with db() as c: rows=c.execute("SELECT id,name,category,price,stock,code,barcode,non_stock FROM products ORDER BY name").fetchall()
         visible=[]
         for r in rows:
             if category not in ("","Semua Grup") and (r["category"] or "Umum")!=category: continue
